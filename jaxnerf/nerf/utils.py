@@ -19,7 +19,7 @@ import collections
 import os
 from os import path
 from absl import flags
-import flax
+import flax                                                                     #Flax는 유연성을 위해 설계된 JAX 용 고성능 신경망 라이브러리 및 에코 시스템
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
@@ -32,9 +32,9 @@ BASE_DIR = "jaxnerf"
 INTERNAL = False
 
 
-@flax.struct.dataclass
+@flax.struct.dataclass                                                          #기존의 class를 jax에서 인식하기 위한 decoration
 class TrainState:
-  optimizer: flax.optim.Optimizer
+  optimizer: flax.optim.Optimizer                                               #SGD, Momentum, Adam, LARS, Adagrad, LAMB, RMSprop
 
 
 @flax.struct.dataclass
