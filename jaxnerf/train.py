@@ -34,20 +34,20 @@ from jaxnerf.nerf import datasets
 from jaxnerf.nerf import models
 from jaxnerf.nerf import utils
 
-FLAGS = flags.FLAGS
+FLAGS = flags.FLAGS                                                             #util에서 정의된 flags.FLAGS값들을 모두 가져옴.
 
-utils.define_flags()
-config.parse_flags_with_absl()
+utils.define_flags()                                                            #FLAGS값 정의.
+config.parse_flags_with_absl()                                                  #FLAGS 값들을 parsing해서 읽어올 수 있게 함.
 
 
 def train_step(model, rng, state, batch, lr):
   """One optimization step.
 
   Args:
-    model: The linen model.
-    rng: jnp.ndarray, random number generator.
-    state: utils.TrainState, state of the model/optimizer.
-    batch: dict, a mini-batch of data for training.
+    model: The linen model.                                                     linen:from flax import linen as nn. flax의 nn이다.
+    rng: jnp.ndarray, random number generator.                                  난수 생성기.
+    state: utils.TrainState, state of the model/optimizer.                      Optimizer에 대한 Class.
+    batch: dict, a mini-batch of data for training.                             데이터들의 미니배치
     lr: float, real-time learning rate.
 
   Returns:
@@ -56,40 +56,43 @@ def train_step(model, rng, state, batch, lr):
     rng: jnp.ndarray, updated random number generator.
   """
   rng, key_0, key_1 = random.split(rng, 3)
-
-  def loss_fn(variables):
-    rays = batch["rays"]
-    ret = model.apply(variables, key_0, key_1, rays, FLAGS.randomized)
-    if len(ret) not in (1, 2):
+  
+  #loss_fn 시작
+  def loss_fn(variables):                                                         #loss, psnr 계산 함수.
+    rays = batch["rays"]                                                          #ray 여러개를 가져옴. 배치로 처리함.
+    ret = model.apply(variables, key_0, key_1, rays, FLAGS.randomized)            #ray와 변수를 MLP에 집어넣음.
+    if len(ret) not in (1, 2):                                                    #MLP 결과의 길이는 1 아니면 2여야함.(fine이거나 coarse,fine이거나)
       raise ValueError(
           "ret should contain either 1 set of output (coarse only), or 2 sets"
           "of output (coarse as ret[0] and fine as ret[1]).")
     # The main prediction is always at the end of the ret list.
-    rgb, unused_disp, unused_acc = ret[-1]
-    loss = ((rgb - batch["pixels"][Ellipsis, :3])**2).mean()
-    psnr = utils.compute_psnr(loss)
-    if len(ret) > 1:
-      # If there are both coarse and fine predictions, we compute the loss for
-      # the coarse prediction (ret[0]) as well.
-      rgb_c, unused_disp_c, unused_acc_c = ret[0]
+    rgb, unused_disp, unused_acc = ret[-1]                                        #모델 결과가 rgb, ?, ?
+    loss = ((rgb - batch["pixels"][Ellipsis, :3])**2).mean()                      #실제 데이터의 rgb값과 비교.
+    psnr = utils.compute_psnr(loss) #loss to psnr
+    if len(ret) > 1:                                                              #MLP 결과의 길이가 2면 coarse한 부분과 fine한 부분의 결과가 동시에 나온다는 뜻. 
+      # If there are both coarse and fine predictions, we compute the loss for    
+      # the coarse prediction (ret[0]) as well. 
+      rgb_c, unused_disp_c, unused_acc_c = ret[0]                                 #len=2 라면 coarse결과에 대한 loss 계산.
       loss_c = ((rgb_c - batch["pixels"][Ellipsis, :3])**2).mean()
       psnr_c = utils.compute_psnr(loss_c)
     else:
       loss_c = 0.
       psnr_c = 0.
 
-    def tree_sum_fn(fn):
-      return jax.tree_util.tree_reduce(
-          lambda x, y: x + fn(y), variables, initializer=0)
+    def tree_sum_fn(fn):                                                          #variables 각각에 fn적용시켜 더하는 함수.
+      return jax.tree_util.tree_reduce(                                           #tree_util->functions working with tree-like data structures(nested tuples, lists, and dicts)
+          lambda x, y: x + fn(y), variables, initializer=0)                       #nested -> (1,2,(3,4),5) 이런 것들. 여기서 leaf의 개수는 5개.
+                                                                                  #variables에 대해 lambda x, y: x + fn(y) 를 차례대로 적용시킴.
 
-    weight_l2 = (
-        tree_sum_fn(lambda z: jnp.sum(z**2)) /
-        tree_sum_fn(lambda z: jnp.prod(jnp.array(z.shape))))
+    weight_l2 = (                                                                 #원소들의 제곱의 합을 원소의 개수로 나눈다.
+        tree_sum_fn(lambda z: jnp.sum(z**2)) /                                    #variables 제곱의 합.
+        tree_sum_fn(lambda z: jnp.prod(jnp.array(z.shape))))                      #variables 원소들의 개수. z.shape:(2,6) jnp.array(2,6):[2,6] jnp.prod([2,6]):12
 
-    stats = utils.Stats(
-        loss=loss, psnr=psnr, loss_c=loss_c, psnr_c=psnr_c, weight_l2=weight_l2)
-    return loss + loss_c + FLAGS.weight_decay_mult * weight_l2, stats
-
+    stats = utils.Stats(                                                          #loss, psnr... 가지고 있는 class
+        loss=loss, psnr=psnr, loss_c=loss_c, psnr_c=psnr_c, weight_l2=weight_l2)  
+    return loss + loss_c + FLAGS.weight_decay_mult * weight_l2, stats             #loss_fn의 return
+    #loss_fn 끝
+    
   (_, stats), grad = (
       jax.value_and_grad(loss_fn, has_aux=True)(state.optimizer.target))
   grad = jax.lax.pmean(grad, axis_name="batch")
