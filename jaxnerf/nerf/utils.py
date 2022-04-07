@@ -34,7 +34,7 @@ INTERNAL = False
 
 @flax.struct.dataclass                                                          #기존의 class를 jax에서 인식하기 위한 decoration
 class TrainState:
-  optimizer: flax.optim.Optimizer                                               #SGD, Momentum, Adam, LARS, Adagrad, LAMB, RMSprop
+  optimizer: flax.optim.Optimizer                                               #Optimizer class 생성.
 
 
 @flax.struct.dataclass
