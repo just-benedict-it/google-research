@@ -29,9 +29,9 @@ from PIL import Image
 from jaxnerf.nerf import utils
 
 
-def get_dataset(split, args):
-  return dataset_dict[args.dataset](split, args)
-
+def get_dataset(split, args):                                                   #main->get_dataset("train", FLAGS) 호출함.
+  return dataset_dict[args.dataset](split, args)                                #FLAGS.dataset=blender(default). dataset_dic["blender"]=Blender(class임)
+                                                    
 
 def convert_to_ndc(origins, directions, focal, w, h, near=1.):
   """Convert a set of rays to NDC coordinates."""
@@ -101,7 +101,7 @@ class Dataset(threading.Thread):
     """
     x = self.queue.queue[0].copy()  # Make a copy of the front of the queue.
     if self.split == "train":
-      return utils.shard(x)
+      return utils.shard(x)                                                                   #Split data into shards for multiple devices along the first dimension.
     else:
       return utils.to_device(x)
 
@@ -193,37 +193,37 @@ class Dataset(threading.Thread):
         origins=origins, directions=directions, viewdirs=viewdirs)
 
 
-class Blender(Dataset):
+class Blender(Dataset):                                                                             #Blender("train", FLAGS) 호출됨. Dataset 클래스를 상속받음.
   """Blender Dataset."""
 
   def _load_renderings(self, args):
     """Load images from disk."""
-    if args.render_path:
+    if args.render_path:                                                                            #FLAGS.render_path=False(default)
       raise ValueError("render_path cannot be used for the blender dataset.")
     with utils.open_file(
-        path.join(args.data_dir, "transforms_{}.json".format(self.split)),
+        path.join(args.data_dir, "transforms_{}.json".format(self.split)),                          #split="train"
         "r") as fp:
-      meta = json.load(fp)
+      meta = json.load(fp)                                                                          #meta: transforms_train.json 파일
     images = []
     cams = []
     for i in range(len(meta["frames"])):
-      frame = meta["frames"][i]
-      fname = os.path.join(args.data_dir, frame["file_path"] + ".png")
+      frame = meta["frames"][i]                                                                     #meta["frame"]: {filepath, rotation, transform_matrix}를 가지는 list
+      fname = os.path.join(args.data_dir, frame["file_path"] + ".png")                              #fname: image 경로
       with utils.open_file(fname, "rb") as imgin:
-        image = np.array(Image.open(imgin), dtype=np.float32) / 255.
+        image = np.array(Image.open(imgin), dtype=np.float32) / 255.                                #이미지 정규화
         if args.factor == 2:
-          [halfres_h, halfres_w] = [hw // 2 for hw in image.shape[:2]]
+          [halfres_h, halfres_w] = [hw // 2 for hw in image.shape[:2]]                              #이미지 해상도 절반으로 나눔.(800,800)->(400,400)
           image = cv2.resize(
               image, (halfres_w, halfres_h), interpolation=cv2.INTER_AREA)
         elif args.factor > 0:
           raise ValueError("Blender dataset only supports factor=0 or 2, {} "
                            "set.".format(args.factor))
-      cams.append(np.array(frame["transform_matrix"], dtype=np.float32))
+      cams.append(np.array(frame["transform_matrix"], dtype=np.float32))                            #meta["transforms_matrix"] 정보들을 cams에 담음.
       images.append(image)
     self.images = np.stack(images, axis=0)
-    if args.white_bkgd:
-      self.images = (
-          self.images[Ellipsis, :3] * self.images[Ellipsis, -1:] +
+    if args.white_bkgd:                                                                             #using white color as default background. 블렌더 데이터에만 사용됨.
+      self.images = (                                                                               #Ellipsis:...(모든 차원 선택)
+          self.images[Ellipsis, :3] * self.images[Ellipsis, -1:] +                                  #??????
           (1. - self.images[Ellipsis, -1:]))
     else:
       self.images = self.images[Ellipsis, :3]
