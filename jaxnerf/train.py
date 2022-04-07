@@ -86,41 +86,41 @@ def train_step(model, rng, state, batch, lr):
 
     weight_l2 = (                                                                 #원소들의 제곱의 합을 원소의 개수로 나눈다.
         tree_sum_fn(lambda z: jnp.sum(z**2)) /                                    #variables 제곱의 합.
-        tree_sum_fn(lambda z: jnp.prod(jnp.array(z.shape))))                      #variables 원소들의 개수. z.shape:(2,6) jnp.array(2,6):[2,6] jnp.prod([2,6]):12
-
-    stats = utils.Stats(                                                          #loss, psnr... 가지고 있는 class
+        tree_sum_fn(lambda z: jnp.prod(jnp.array(z.shape))))                      #variables 원소들의 개수. z.shape:(2,6) jnp.array(2,6):[2,6] jnp.prod([2,6]):12.
+ 
+    stats = utils.Stats(                                                          #loss, psnr... 가지고 있는 class.
         loss=loss, psnr=psnr, loss_c=loss_c, psnr_c=psnr_c, weight_l2=weight_l2)  
-    return loss + loss_c + FLAGS.weight_decay_mult * weight_l2, stats             #loss_fn의 return
+    return loss + loss_c + FLAGS.weight_decay_mult * weight_l2, stats             #loss_fn->loss와 stats을 return. weight_decay_mult = 0(default).
     #loss_fn 끝
     
   (_, stats), grad = (
-      jax.value_and_grad(loss_fn, has_aux=True)(state.optimizer.target))
-  grad = jax.lax.pmean(grad, axis_name="batch")
-  stats = jax.lax.pmean(stats, axis_name="batch")
+      jax.value_and_grad(loss_fn, has_aux=True)(state.optimizer.target))          #value_and_grad: (함수값,auxilary data:stats), 도함수값 return.
+  grad = jax.lax.pmean(grad, axis_name="batch")                                   #axis_name을 따라 값들의 평균을 냄.
+  stats = jax.lax.pmean(stats, axis_name="batch")                                 
 
   # Clip the gradient by value.
-  if FLAGS.grad_max_val > 0:
-    clip_fn = lambda z: jnp.clip(z, -FLAGS.grad_max_val, FLAGS.grad_max_val)
-    grad = jax.tree_util.tree_map(clip_fn, grad)
+  if FLAGS.grad_max_val > 0:                                                      #The gradient clipping value(default=0).
+    clip_fn = lambda z: jnp.clip(z, -FLAGS.grad_max_val, FLAGS.grad_max_val)      #z값을 grad_max_val와 -grad_max_val 사이로 가둠.
+    grad = jax.tree_util.tree_map(clip_fn, grad)                                  #grad의 원소에 clip_fn적용.
 
   # Clip the (possibly value-clipped) gradient by norm.
-  if FLAGS.grad_max_norm > 0:
+  if FLAGS.grad_max_norm > 0:                                                     #The gradient clipping magnitude(default=0).
     grad_norm = jnp.sqrt(
         jax.tree_util.tree_reduce(
-            lambda x, y: x + jnp.sum(y**2), grad, initializer=0))
-    mult = jnp.minimum(1, FLAGS.grad_max_norm / (1e-7 + grad_norm))
-    grad = jax.tree_util.tree_map(lambda z: mult * z, grad)
+            lambda x, y: x + jnp.sum(y**2), grad, initializer=0))                 #grad_norm=(grad 제곱의 합)^0.5
+    mult = jnp.minimum(1, FLAGS.grad_max_norm / (1e-7 + grad_norm))               
+    grad = jax.tree_util.tree_map(lambda z: mult * z, grad)                       #grad의 원소에 mult 곱해줌.
 
-  new_optimizer = state.optimizer.apply_gradient(grad, learning_rate=lr)
+  new_optimizer = state.optimizer.apply_gradient(grad, learning_rate=lr)          #optimizer(Adam) 업데이트.
   new_state = state.replace(optimizer=new_optimizer)
   return new_state, stats, rng
-
+  #train_step 끝.
 
 def main(unused_argv):
-  rng = random.PRNGKey(20200823)
+  rng = random.PRNGKey(20200823)                                                   #난수 생성기 key
   # Shift the numpy random seed by host_id() to shuffle data loaded by different
   # hosts.
-  np.random.seed(20201473 + jax.host_id())
+  np.random.seed(20201473 + jax.host_id())                                         #data shuffle
 
   if FLAGS.config is not None:
     utils.update_flags(FLAGS)
@@ -130,17 +130,17 @@ def main(unused_argv):
     raise ValueError("train_dir must be set. None set now.")
   if FLAGS.data_dir is None:
     raise ValueError("data_dir must be set. None set now.")
-  dataset = datasets.get_dataset("train", FLAGS)
-  test_dataset = datasets.get_dataset("test", FLAGS)
-
-  rng, key = random.split(rng)
-  model, variables = models.get_model(key, dataset.peek(), FLAGS)
-  optimizer = flax.optim.Adam(FLAGS.lr_init).create(variables)
-  state = utils.TrainState(optimizer=optimizer)
+  dataset = datasets.get_dataset("train", FLAGS)                                    #datasets.py 에서 get_dataset 함수 호출>Blender class 불러옴.
+  test_dataset = datasets.get_dataset("test", FLAGS)                                #datasets.py 에서 get_dataset 함수 호출>Blender class 불러옴.
+  
+  rng, key = random.split(rng)                                                      #난수 생성기 key를 두개로 쪼갬
+  model, variables = models.get_model(key, dataset.peek(), FLAGS)                   #(NerfModel, init_variables) return.
+  optimizer = flax.optim.Adam(FLAGS.lr_init).create(variables)                      #optimizer 오브젝트 생성. OptimizerDef.create()->optimizer 오브젝트 생성. Adam이 OptimizerDef상속받음.
+  state = utils.TrainState(optimizer=optimizer)                                     #state에 Adam optimizer 담음.
   del optimizer, variables
 
-  learning_rate_fn = functools.partial(
-      utils.learning_rate_decay,
+  learning_rate_fn = functools.partial(                                             #utils.learning_rate_decay함수의 인자만 바꾼(partial) 새로운 함수 생성.
+      utils.learning_rate_decay,                                                    #learning_rate_decay 나중에 확인!!
       lr_init=FLAGS.lr_init,
       lr_final=FLAGS.lr_final,
       max_steps=FLAGS.max_steps,
@@ -153,12 +153,12 @@ def main(unused_argv):
       in_axes=(0, 0, 0, None),
       donate_argnums=(2,))
 
-  def render_fn(variables, key_0, key_1, rays):
+  def render_fn(variables, key_0, key_1, rays):   
     return jax.lax.all_gather(
         model.apply(variables, key_0, key_1, rays, FLAGS.randomized),
         axis_name="batch")
 
-  render_pfn = jax.pmap(
+  render_pfn = jax.pmap(                                                              #render_fn을 pmap시킴. gpu에서 빠르게 rendering가능.
       render_fn,
       in_axes=(None, None, None, 0),  # Only distribute the data input.
       donate_argnums=(3,),
