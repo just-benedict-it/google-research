@@ -24,12 +24,12 @@ from jaxnerf.nerf import model_utils
 from jaxnerf.nerf import utils
 
 
-def get_model(key, example_batch, args):
+def get_model(key, example_batch, args):                                                        #main>get_model(key, dataset.peek(), FLAGS) 호출
   """A helper function that wraps around a 'model zoo'."""
   model_dict = {
       "nerf": construct_nerf,
   }
-  return model_dict[args.model](key, example_batch, args)
+  return model_dict[args.model](key, example_batch, args)                                       #FLAGS.model="nerf". construc_nerf로 이동.
 
 
 class NerfModel(nn.Module):
@@ -188,28 +188,29 @@ class NerfModel(nn.Module):
     return ret
 
 
-def construct_nerf(key, example_batch, args):
+def construct_nerf(key, example_batch, args):                                             #construct_nerf(key, dataset.peek(), FLAGS) 함수 호출됨.
   """Construct a Neural Radiance Field.
 
   Args:
     key: jnp.ndarray. Random number generator.
-    example_batch: dict, an example of a batch of data.
-    args: FLAGS class. Hyperparameters of nerf.
+    example_batch: dict, an example of a batch of data.                                   peek(): Split data into shards for multiple devices along the first dimension.
+    args: FLAGS class. Hyperparameters of nerf.                                           즉 dataset batch들의 집합이라고 생각하면 될듯.
 
   Returns:
     model: nn.Model. Nerf model with parameters.
     state: flax.Module.state. Nerf model state for stateful parameters.
   """
-  net_activation = getattr(nn, str(args.net_activation))
-  rgb_activation = getattr(nn, str(args.rgb_activation))
-  sigma_activation = getattr(nn, str(args.sigma_activation))
+                                                                                          #flax에 정의되어 있는 activation을 불러온다.
+  net_activation = getattr(nn, str(args.net_activation))                                  #relu. getattr:object의 속성값을 가져온다.
+  rgb_activation = getattr(nn, str(args.rgb_activation))                                  #sigmoid
+  sigma_activation = getattr(nn, str(args.sigma_activation))                              #relu
 
   # Assert that rgb_activation always produces outputs in [0, 1], and
   # sigma_activation always produce non-negative outputs.
-  x = jnp.exp(jnp.linspace(-90, 90, 1024))
-  x = jnp.concatenate([-x[::-1], x], 0)
+  x = jnp.exp(jnp.linspace(-90, 90, 1024))                                                #-90부터 90까지 1024단위로 배열한 것들에 exp취함. shape:(1024,)
+  x = jnp.concatenate([-x[::-1], x], 0)                                                   #x[::-1]->리스트 뒤집기. shape:(2048,)
 
-  rgb = rgb_activation(x)
+  rgb = rgb_activation(x)                                                                 #x=DeviceArray([-inf, -inf, -inf, ...,  inf,  inf,  inf], dtype=float32)
   if jnp.any(rgb < 0) or jnp.any(rgb > 1):
     raise NotImplementedError(
         "Choice of rgb_activation `{}` produces colors outside of [0, 1]"
