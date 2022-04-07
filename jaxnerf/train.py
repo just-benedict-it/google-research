@@ -120,11 +120,12 @@ def main(unused_argv):
   rng = random.PRNGKey(20200823)                                                   #난수 생성기 key
   # Shift the numpy random seed by host_id() to shuffle data loaded by different
   # hosts.
-  np.random.seed(20201473 + jax.host_id())                                         #data shuffle
-
+  np.random.seed(20201473 + jax.host_id())                                         #data shuffle,  # only use host 0 to record results
+  
+  #config, device개수, 디렉토리 확인 및 데이터 불러오기
   if FLAGS.config is not None:
     utils.update_flags(FLAGS)
-  if FLAGS.batch_size % jax.device_count() != 0:
+  if FLAGS.batch_size % jax.device_count() != 0:                                   #FLAGS.batch_size=1024. device개수로 나누었을 때 나머지가 0이어야 함.
     raise ValueError("Batch size must be divisible by the number of devices.")
   if FLAGS.train_dir is None:
     raise ValueError("train_dir must be set. None set now.")
@@ -133,39 +134,42 @@ def main(unused_argv):
   dataset = datasets.get_dataset("train", FLAGS)                                    #datasets.py 에서 get_dataset 함수 호출>Blender class 불러옴.
   test_dataset = datasets.get_dataset("test", FLAGS)                                #datasets.py 에서 get_dataset 함수 호출>Blender class 불러옴.
   
+  #zero gradient(optimizer 초기화)
   rng, key = random.split(rng)                                                      #난수 생성기 key를 두개로 쪼갬
   model, variables = models.get_model(key, dataset.peek(), FLAGS)                   #(NerfModel, init_variables) return.
   optimizer = flax.optim.Adam(FLAGS.lr_init).create(variables)                      #optimizer 오브젝트 생성. OptimizerDef.create()->optimizer 오브젝트 생성. Adam이 OptimizerDef상속받음.
   state = utils.TrainState(optimizer=optimizer)                                     #state에 Adam optimizer 담음.
   del optimizer, variables
-
+  
+  #learning_rate function
   learning_rate_fn = functools.partial(                                             #utils.learning_rate_decay함수의 인자만 바꾼(partial) 새로운 함수 생성.
-      utils.learning_rate_decay,                                                    #learning_rate_decay 나중에 확인!!
-      lr_init=FLAGS.lr_init,
-      lr_final=FLAGS.lr_final,
-      max_steps=FLAGS.max_steps,
-      lr_delay_steps=FLAGS.lr_delay_steps,
-      lr_delay_mult=FLAGS.lr_delay_mult)
+      utils.learning_rate_decay,                                                    #learning_rate_decay 나중에 확인!!->학습 할수록 lr 줄어드는 함수.
+      lr_init=FLAGS.lr_init,                                                        #시작할때 lr
+      lr_final=FLAGS.lr_final,                                                      #마지막 lr
+      max_steps=FLAGS.max_steps,                                                    #총 step 개수
+      lr_delay_steps=FLAGS.lr_delay_steps,                                          #??
+      lr_delay_mult=FLAGS.lr_delay_mult)                                            #lr 속도 줄이는 가중치
 
   train_pstep = jax.pmap(
       functools.partial(train_step, model),
-      axis_name="batch",
+      axis_name="batch",                                                            #batch: ray, pixel 담고 있는 데이터 batch
       in_axes=(0, 0, 0, None),
       donate_argnums=(2,))
-
-  def render_fn(variables, key_0, key_1, rays):   
+  
+  #rendering 함수
+  def render_fn(variables, key_0, key_1, rays):                                     #??? 나중에 확인! key_0,1 계속 나오는데 중요하니 찾아봐!!
     return jax.lax.all_gather(
         model.apply(variables, key_0, key_1, rays, FLAGS.randomized),
         axis_name="batch")
-
-  render_pfn = jax.pmap(                                                              #render_fn을 pmap시킴. gpu에서 빠르게 rendering가능.
+  #rendering 함수 pamp
+  render_pfn = jax.pmap(                                                            #render_fn을 pmap시킴. gpu에서 빠르게 rendering가능.
       render_fn,
       in_axes=(None, None, None, 0),  # Only distribute the data input.
       donate_argnums=(3,),
       axis_name="batch",
   )
 
-  # Compiling to the CPU because it's faster and more accurate.
+  # Compiling to the CPU because it's faster and more accurate.                     #jit은 cpu를 사용하나?
   ssim_fn = jax.jit(
       functools.partial(utils.compute_ssim, max_val=1.), backend="cpu")
 
@@ -187,11 +191,13 @@ def main(unused_argv):
   gc.disable()  # Disable automatic garbage collection for efficiency.
   stats_trace = []
   reset_timer = True
+  
+  #step과 dataset을 주고 학습.
   for step, batch in zip(range(init_step, FLAGS.max_steps + 1), pdataset):
     if reset_timer:
       t_loop_start = time.time()
       reset_timer = False
-    lr = learning_rate_fn(step)
+    lr = learning_rate_fn(step)                                                           #step에 따라 lr 달라짐.
     state, stats, keys = train_pstep(keys, state, batch, lr)
     if jax.host_id() == 0:
       stats_trace.append(stats)
