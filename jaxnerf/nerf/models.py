@@ -32,8 +32,8 @@ def get_model(key, example_batch, args):                                        
   return model_dict[args.model](key, example_batch, args)                                       #FLAGS.model="nerf". construc_nerf로 이동.
 
 
-class NerfModel(nn.Module):
-  """Nerf NN Model with both coarse and fine MLPs."""
+class NerfModel(nn.Module):                                                                     #NeRFModel 클래스 생성
+  """Nerf NN Model with both coarse and fine MLPs."""                                                   
   num_coarse_samples: int  # The number of samples for the coarse nerf.
   num_fine_samples: int  # The number of samples for the fine nerf.
   use_viewdirs: bool  # If True, use viewdirs as an input.
@@ -58,21 +58,21 @@ class NerfModel(nn.Module):
   legacy_posenc_order: bool  # Keep the same ordering as the original tf code.
 
   @nn.compact
-  def __call__(self, rng_0, rng_1, rays, randomized):
+  def __call__(self, rng_0, rng_1, rays, randomized):                                             #__call__ : 인스턴스가 호출되었을 때 실행된다
     """Nerf Model.
 
     Args:
-      rng_0: jnp.ndarray, random number generator for coarse model sampling.
-      rng_1: jnp.ndarray, random number generator for fine model sampling.
-      rays: util.Rays, a namedtuple of ray origins, directions, and viewdirs.
+      rng_0: jnp.ndarray, random number generator for coarse model sampling.                      #rng_0 : coarse model sampling을 위한 난수 생성기
+      rng_1: jnp.ndarray, random number generator for fine model sampling.                        #rng_1 : fine model sampling을 위한 난수 생성기
+      rays: util.Rays, a namedtuple of ray origins, directions, and viewdirs.                     #rays : ray에 대한 정보(시작점, 방향, view dirs)
       randomized: bool, use randomized stratified sampling.
 
     Returns:
       ret: list, [(rgb_coarse, disp_coarse, acc_coarse), (rgb, disp, acc)]
     """
     # Stratified sampling along rays
-    key, rng_0 = random.split(rng_0)
-    z_vals, samples = model_utils.sample_along_rays(
+    key, rng_0 = random.split(rng_0)                                                              #rng_0를 두개로 쪼갬
+    z_vals, samples = model_utils.sample_along_rays(                                              #ray에서 coarse sampling 진행 (sample_along_rays알아보기)
         key,
         rays.origins,
         rays.directions,
